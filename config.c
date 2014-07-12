@@ -30,8 +30,6 @@
 
 /*
 static const char *globals[] = {
-	"Allow",
-	"Deny",
 	"Gateway",
 	"Listen",
 	"SOCKS5Proxy",

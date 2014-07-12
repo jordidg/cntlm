@@ -52,7 +52,6 @@
 #include "ntlm.h"
 #include "swap.h"
 #include "config.h"
-#include "acl.h"
 #include "auth.h"
 #include "http.h"
 #include "globals.h"
@@ -180,14 +179,19 @@ int parent_add(char *parent, int port) {
  * Register and bind new proxy service port.
  */
 void listen_add(const char *service, plist_t *list, char *spec, int gateway) {
-	struct in_addr source;
+	struct in6_addr source;
 	int i, p, len, port;
 	char *tmp;
 
 	len = strlen(spec);
-	p = strcspn(spec, ":");
-	if (p < len-1) {
-		tmp = substr(spec, 0, p);
+	char *q = strrchr(spec, ':');
+	if (q != NULL) {
+		p = (int)(q - spec);
+		if(spec[0] == '[' && spec[p-1] == ']') {
+			tmp = substr(spec, 1, p-2);
+	        } else {
+			tmp = substr(spec, 0, p);
+		}
 		if (!so_resolv(&source, tmp)) {
 			syslog(LOG_ERR, "Cannot resolve listen address %s\n", tmp);
 			myexit(1);
@@ -195,7 +199,7 @@ void listen_add(const char *service, plist_t *list, char *spec, int gateway) {
 		free(tmp);
 		port = atoi(tmp = spec+p+1);
 	} else {
-		source.s_addr = htonl(gateway ? INADDR_ANY : INADDR_LOOPBACK);
+		source = gateway ? in6addr_any : in6addr_loopback;
 		port = atoi(tmp = spec);
 	}
 
@@ -207,7 +211,9 @@ void listen_add(const char *service, plist_t *list, char *spec, int gateway) {
 	i = so_listen(port, source);
 	if (i > 0) {
 		*list = plist_add(*list, i, NULL);
-		syslog(LOG_INFO, "%s listening on %s:%d\n", service, inet_ntoa(source), port);
+		char s[INET6_ADDRSTRLEN];
+		inet_ntop(AF_INET6, &source, s, INET6_ADDRSTRLEN);
+		syslog(LOG_INFO, "%s listening on %s:%d\n", service, s, port);
 	}
 }
 
@@ -215,7 +221,7 @@ void listen_add(const char *service, plist_t *list, char *spec, int gateway) {
  * Register a new tunnel definition, bind service port.
  */
 void tunnel_add(plist_t *list, char *spec, int gateway) {
-	struct in_addr source;
+	struct in6_addr source;
 	int i, len, count, pos, port;
 	char *field[4];
 	char *tmp;
@@ -237,7 +243,7 @@ void tunnel_add(plist_t *list, char *spec, int gateway) {
                 }
 		pos++;
 	} else
-		source.s_addr = htonl(gateway ? INADDR_ANY : INADDR_LOOPBACK);
+		source = gateway ? in6addr_any : in6addr_loopback;
 
 	if (count-pos == 3) {
 		port = atoi(field[pos]);
@@ -259,7 +265,7 @@ void tunnel_add(plist_t *list, char *spec, int gateway) {
 		i = so_listen(port, source);
 		if (i > 0) {
 			*list = plist_add(*list, i, tmp);
-			syslog(LOG_INFO, "New tunnel from %s:%d to %s\n", inet_ntoa(source), port, tmp);
+//			syslog(LOG_INFO, "New tunnel from %s:%d to %s\n", inet_ntoa(source), port, tmp);
 		} else
 			free(tmp);
 	} else {
@@ -418,7 +424,6 @@ void *socks5_thread(void *thread_data) {
 	int open = !hlist_count(users_list);
 
 	int cd = ((struct thread_arg_s *)thread_data)->fd;
-	struct sockaddr_in caddr = ((struct thread_arg_s *)thread_data)->addr;
 	free(thread_data);
 
 	/*
@@ -636,7 +641,6 @@ void *socks5_thread(void *thread_data) {
 		w = write(cd, bs, 10);
 	}
 
-	syslog(LOG_DEBUG, "%s SOCKS %s", inet_ntoa(caddr.sin_addr), thost);
 
 	/*
 	 * Let's give them bi-directional connection they asked for
@@ -714,13 +718,8 @@ int main(int argc, char **argv) {
 	syslog(LOG_INFO, "Starting cntlm version " VERSION " for LITTLE endian\n");
 #endif
 
-	while ((i = getopt(argc, argv, ":-:T:a:c:d:fghIl:p:r:su:vw:A:BD:F:G:HL:M:N:O:P:R:S:U:")) != -1) {
+	while ((i = getopt(argc, argv, ":-:T:a:c:d:fghIl:p:r:su:vw:B:F:G:HL:M:N:O:P:R:S:U:")) != -1) {
 		switch (i) {
-			case 'A':
-			case 'D':
-				if (!acl_add(&rules, optarg, (i == 'A' ? ACL_ALLOW : ACL_DENY)))
-					myexit(1);
-				break;
 			case 'a':
 				strlcpy(cauth, optarg, MINIBUF_SIZE);
 				break;
@@ -874,8 +873,6 @@ int main(int argc, char **argv) {
 			"For copyright holders of included encryption routines see headers.\n\n");
 
 		fprintf(stderr, "Usage: %s [-AaBcDdFfgHhILlMPpSsTUuvw] <proxy_host>[:]<proxy_port> ...\n", argv[0]);
-		fprintf(stderr, "\t-A  <address>[/<net>]\n"
-				"\t    ACL allow rule. IP or hostname, net must be a number (CIDR notation)\n");
 		fprintf(stderr, "\t-a  ntlm | nt | lm\n"
 				"\t    Authentication type - combined NTLM, just LM, or just NT. Default NTLM.\n"
 				"\t    It is the most versatile setting and likely to work for you.\n");
@@ -883,8 +880,6 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "\t-c  <config_file>\n"
 				"\t    Configuration file. Other arguments can be used as well, overriding\n"
 				"\t    config file settings.\n");
-		fprintf(stderr, "\t-D  <address>[/<net>]\n"
-				"\t    ACL deny rule. Syntax same as -A.\n");
 		fprintf(stderr, "\t-d  <domain>\n"
 				"\t    Domain/workgroup can be set separately.\n");
 		fprintf(stderr, "\t-f  Run in foreground, do not fork into daemon mode.\n");
@@ -1059,23 +1054,6 @@ int main(int argc, char **argv) {
 			free(tmp);
 		}
 
-		/*
-		 * No ACLs on the command line? Use config file.
-		 */
-		if (rules == NULL) {
-			list = cf->options;
-			while (list) {
-				if (!(i=strcasecmp("Allow", list->key)) || !strcasecmp("Deny", list->key))
-					if (!acl_add(&rules, list->value, i ? ACL_DENY : ACL_ALLOW))
-						myexit(1);
-				list = list->next;
-			}
-
-			while ((tmp = config_pop(cf, "Allow")))
-				free(tmp);
-			while ((tmp = config_pop(cf, "Deny")))
-				free(tmp);
-		}
 
 		/*
 		 * Single options.
@@ -1468,7 +1446,7 @@ int main(int argc, char **argv) {
 	 */
 	while (quit == 0 || (tc != tj && quit < 2)) {
 		struct thread_arg_s *data;
-		struct sockaddr_in caddr;
+		struct sockaddr_in6 caddr;
 		struct timeval tv;
 		socklen_t clen;
 		fd_set set;
@@ -1531,29 +1509,6 @@ int main(int argc, char **argv) {
 					syslog(LOG_ERR, "Serious error during accept: %s\n", strerror(errno));
 					continue;
 				}
-
-				/*
-				 * Check main access control list.
-				 */
-				if (acl_check(rules, caddr.sin_addr) != ACL_ALLOW) {
-					syslog(LOG_WARNING, "Connection denied for %s:%d\n",
-						inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
-					tmp = gen_denied_page(inet_ntoa(caddr.sin_addr));
-					w = write(cd, tmp, strlen(tmp));
-					// We don't really care about the result - shut up GCC warning (unused-but-set-variable)
-					if (!w) w = 1;
-					free(tmp);
-					close(cd);
-					continue;
-				}
-
-				/*
-				 * Log peer IP if it's not localhost
-				 *
-				 * if (debug || (gateway && caddr.sin_addr.s_addr != htonl(INADDR_LOOPBACK)))
-				 * 	syslog(LOG_INFO, "Connection accepted from %s:%d\n",
-				 * 	inet_ntoa(caddr.sin_addr), ntohs(caddr.sin_port));
-				 */
 
 				pthread_attr_init(&pattr);
 				pthread_attr_setstacksize(&pattr, STACK_SIZE);
