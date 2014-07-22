@@ -48,14 +48,11 @@ extern pthread_mutex_t connection_mtx;
 extern int parent_count;
 extern plist_t parent_list;
 
-/*
- * just malloc/free sizeof(proxy_t)
- */
 typedef struct {
 	char hostname[64];
-	struct auth_s creds;
-	struct in6_addr host;
 	int port;
+	struct auth_s creds;
+	struct addrinfo *addresses;
 	int resolved;
 } proxy_t;
 

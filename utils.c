@@ -34,6 +34,7 @@
 #include "swap.h"
 #include "utils.h"
 #include "socket.h"
+#include "globals.h"
 
 char hextab[17] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', 0};
 int hexindex[128] = {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
@@ -238,6 +239,27 @@ plist_t plist_free(plist_t list) {
 		if (list->aux)
 			free(list->aux);
 		free(list);
+		list = t;
+	}
+
+	return NULL;
+}
+
+/*
+ * Free parent_list
+ */
+plist_t parentlist_free(plist_t list) {
+	plist_t t = list;
+
+	while (list) {
+		t = list->next;
+
+		proxy_t *proxy = (proxy_t *) list->aux;
+
+		freeaddrinfo(proxy->addresses);
+		free(proxy);
+		free(list);
+
 		list = t;
 	}
 

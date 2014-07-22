@@ -120,6 +120,7 @@ extern char *plist_get(plist_t list, int key);
 extern int plist_pop(plist_t *list, void **aux);
 extern int plist_count(plist_t list);
 extern plist_t plist_free(plist_t list);
+extern plist_t parentlist_free(plist_t list);
 
 extern hlist_t hlist_add(hlist_t list, char *key, char *value, hlist_add_t allockey, hlist_add_t allocvalue);
 extern hlist_t hlist_dup(hlist_t list);
